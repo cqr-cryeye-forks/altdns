@@ -3,24 +3,25 @@
 # <3 silvio
 
 import argparse
+import pathlib
 import threading
 import time
 import datetime
 from threading import Lock
-try:
-   import Queue as queue
-except ImportError:
-   import queue as queue
 
+try:
+    import Queue as queue
+except ImportError:
+    import queue as queue
 import tldextract
-from tldextract.tldextract import LOG
 import logging
 from termcolor import colored
 import dns.resolver
-import re
+import json
 import os
 
 logging.basicConfig(level=logging.CRITICAL)
+
 
 def get_alteration_words(wordlist_fname):
     with open(wordlist_fname, "r") as f:
@@ -28,7 +29,7 @@ def get_alteration_words(wordlist_fname):
 
 # will write to the file if the check returns true
 def write_domain(args, wp, full_url):
-  wp.write(full_url)
+    wp.write(full_url)
 
 # function inserts words at every index of the subdomain
 def insert_all_indexes(args, alteration_words):
@@ -53,7 +54,7 @@ def insert_all_indexes(args, alteration_words):
                     full_url = "{0}.{1}.{2}\n".format(
                         actual_sub, ext.domain, ext.suffix)
                     if len(current_sub[0]) > 0:
-                      write_domain(args, wp, full_url)
+                        write_domain(args, wp, full_url)
                     current_sub.pop()
 
 # adds word-NUM and wordNUM to each subdomain at each unique position
@@ -65,7 +66,7 @@ def insert_number_suffix_subdomains(args, alternation_words):
                 current_sub = ext.subdomain.split(".")
                 for word in range(0, 10):
                     for index, value in enumerate(current_sub):
-                        #add word-NUM
+                        # add word-NUM
                         original_sub = current_sub[index]
                         current_sub[index] = current_sub[index] + "-" + str(word)
                         # join the list to make into actual subdomain (aa.bb.cc)
@@ -75,7 +76,7 @@ def insert_number_suffix_subdomains(args, alternation_words):
                         write_domain(args, wp, full_url)
                         current_sub[index] = original_sub
 
-                        #add wordNUM
+                        # add wordNUM
                         original_sub = current_sub[index]
                         current_sub[index] = current_sub[index] + str(word)
                         # join the list to make into actual subdomain (aa.bb.cc)
@@ -86,62 +87,57 @@ def insert_number_suffix_subdomains(args, alternation_words):
                         current_sub[index] = original_sub
 
 # adds word- and -word to each subdomain at each unique position
-def insert_dash_subdomains(args, alteration_words):
-    with open(args.input, "r") as fp:
-        with open(args.output_tmp, "a") as wp:
-            for line in fp:
-                ext = tldextract.extract(line.strip())
-                current_sub = ext.subdomain.split(".")
-                for word in alteration_words:
-                    for index, value in enumerate(current_sub):
-                        original_sub = current_sub[index]
-                        current_sub[index] = current_sub[
-                            index] + "-" + word.strip()
-                        # join the list to make into actual subdomain (aa.bb.cc)
-                        actual_sub = ".".join(current_sub)
-                        # save full URL as line in file
-                        full_url = "{0}.{1}.{2}\n".format(
-                            actual_sub, ext.domain, ext.suffix)
-                        if len(current_sub[0]) > 0 and actual_sub[:1] != "-":
-                            write_domain(args, wp, full_url)
-                        current_sub[index] = original_sub
-                        # second dash alteration
-                        current_sub[index] = word.strip() + "-" + \
-                            current_sub[index]
-                        actual_sub = ".".join(current_sub)
-                        # save second full URL as line in file
-                        full_url = "{0}.{1}.{2}\n".format(
-                            actual_sub, ext.domain, ext.suffix)
-                        if actual_sub[-1:] != "-":
-                            write_domain(args, wp, full_url)
-                        current_sub[index] = original_sub
+def insert_all_indexes(args, alteration_words):
+    subdomain = args.input
+    ext = tldextract.extract(subdomain.strip())
+    current_sub = ext.subdomain.split(".")
+
+    with open(args.output_tmp, "a") as wp:
+        for word in alteration_words:
+            for index in range(0, len(current_sub)):
+                current_sub.insert(index, word.strip())
+                # join the list to make into actual subdomain (aa.bb.cc)
+                actual_sub = ".".join(current_sub)
+                # save full URL as line in file
+                full_url = "{0}.{1}.{2}\n".format(
+                    actual_sub, ext.domain, ext.suffix)
+                if actual_sub[-1:] != ".":
+                    write_domain(args, wp, full_url)
+                current_sub.pop(index)
+            current_sub.append(word.strip())
+            actual_sub = ".".join(current_sub)
+            full_url = "{0}.{1}.{2}\n".format(
+                actual_sub, ext.domain, ext.suffix)
+            if len(current_sub[0]) > 0:
+                write_domain(args, wp, full_url)
+            current_sub.pop()
+
 
 # adds prefix and suffix word to each subdomain
 def join_words_subdomains(args, alteration_words):
-    with open(args.input, "r") as fp:
-        with open(args.output_tmp, "a") as wp:
-            for line in fp:
-                ext = tldextract.extract(line.strip())
-                current_sub = ext.subdomain.split(".")
-                for word in alteration_words:
-                    for index, value in enumerate(current_sub):
-                        original_sub = current_sub[index]
-                        current_sub[index] = current_sub[index] + word.strip()
-                        # join the list to make into actual subdomain (aa.bb.cc)
-                        actual_sub = ".".join(current_sub)
-                        # save full URL as line in file
-                        full_url = "{0}.{1}.{2}\n".format(
-                            actual_sub, ext.domain, ext.suffix)
-                        write_domain(args, wp, full_url)
-                        current_sub[index] = original_sub
-                        # second dash alteration
-                        current_sub[index] = word.strip() + current_sub[index]
-                        actual_sub = ".".join(current_sub)
-                        # save second full URL as line in file
-                        full_url = "{0}.{1}.{2}\n".format(
-                            actual_sub, ext.domain, ext.suffix)
-                        write_domain(args, wp, full_url)
-                        current_sub[index] = original_sub
+    subdomain = args.input  # Получаем поддомен из аргумента --input
+    ext = tldextract.extract(subdomain.strip())
+    current_sub = ext.subdomain.split(".")
+    with open(args.output_tmp, "a") as wp:
+        for word in alteration_words:
+            for index, value in enumerate(current_sub):
+                original_sub = current_sub[index]
+                current_sub[index] = current_sub[index] + word.strip()
+                # join the list to make into actual subdomain (aa.bb.cc)
+                actual_sub = ".".join(current_sub)
+                # save full URL as line in file
+                full_url = "{0}.{1}.{2}\n".format(
+                    actual_sub, ext.domain, ext.suffix)
+                write_domain(args, wp, full_url)
+                current_sub[index] = original_sub
+                # second dash alteration
+                current_sub[index] = word.strip() + current_sub[index]
+                actual_sub = ".".join(current_sub)
+                # save second full URL as line in file
+                full_url = "{0}.{1}.{2}\n".format(
+                    actual_sub, ext.domain, ext.suffix)
+                write_domain(args, wp, full_url)
+                current_sub[index] = original_sub
 
 
 def get_cname(q, target, resolved_out):
@@ -155,12 +151,13 @@ def get_cname(q, target, resolved_out):
     lock.release()
     if progress % 500 == 0:
         lock.acquire()
-        left = linecount-progress
-        secondspassed = (int(time.time())-starttime)+1
+        left = linecount - progress
+        secondspassed = (int(time.time()) - starttime) + 1
         amountpersecond = progress / secondspassed
         lock.release()
-        seconds = 0 if amountpersecond == 0 else int(left/amountpersecond)
+        seconds = 0 if amountpersecond == 0 else int(left / amountpersecond)
         timeleft = str(datetime.timedelta(seconds=seconds))
+        logging.info("[*] {0}/{1} completed, approx {2} left".format(progress, linecount, timeleft))
         print(
             colored("[*] {0}/{1} completed, approx {2} left".format(progress, linecount, timeleft),
                     "blue"))
@@ -168,23 +165,23 @@ def get_cname(q, target, resolved_out):
     result = list()
     result.append(target)
     resolver = dns.resolver.Resolver()
-    if(resolverName != None): #if a DNS server has been manually specified
+    if (resolverName != None):  # if a DNS server has been manually specified
         resolver.nameservers = [resolverName]
     try:
-      for rdata in resolver.query(final_hostname, 'CNAME'):
-        result.append(rdata.target)
+        for rdata in resolver.resolve(final_hostname, 'CNAME'):
+            result.append(rdata.target)
     except:
         pass
     if len(result) == 1:
-      try:
-        A = resolver.query(final_hostname, "A")
-        if len(A) > 0:
-          result = list()
-          result.append(final_hostname)
-          result.append(str(A[0]))
-      except:
-        pass
-    if len(result) > 1: #will always have 1 item (target)
+        try:
+            A = resolver.resolve(final_hostname, "A")
+            if len(A) > 0:
+                result = list()
+                result.append(final_hostname)
+                result.append(str(A[0]))
+        except:
+            pass
+    if len(result) > 1:  # will always have 1 item (target)
         if str(result[1]) in found:
             if found[str(result[1])] > 3:
                 return
@@ -192,7 +189,9 @@ def get_cname(q, target, resolved_out):
                 found[str(result[1])] = found[str(result[1])] + 1
         else:
             found[str(result[1])] = 1
-        resolved_out.write(str(result[0]) + ":" + str(result[1]) + "\n")
+
+        resolved_out.write(f'{json.dumps({"url": "http://" + result[0], "ip": result[1]})}\n')
+        # resolved_out.write(str(result[0]) + ":" + str(result[1]) + "\n")
         resolved_out.flush()
         ext = tldextract.extract(str(result[1]))
         if ext.domain == "amazonaws":
@@ -225,21 +224,23 @@ def get_cname(q, target, resolved_out):
     q.put(result)
 
 def remove_duplicates(args):
-  with open(args.output) as b:
-    blines = set(b)
-    with open(args.output, 'w') as result:
-      for line in blines:
-        result.write(line)
+    with open(args.output) as b:
+        blines = set(b)
+        with open(args.output, 'w') as result:
+            for line in blines:
+                result.write(line)
+
 
 def remove_existing(args):
-  with open(args.input) as b:
-    blines = set(b)
-  with open(args.output_tmp) as a:
-    with open(args.output, 'w') as result:
-      for line in a:
-        if line not in blines:
-          result.write(line)
-  os.remove(args.output_tmp)
+    with open(args.input) as b:
+        blines = set(b)
+    with open(args.output_tmp) as a:
+        with open(args.output, 'w') as result:
+            for line in a:
+                if line not in blines:
+                    # result.write(line)
+                    result.write(json.dumps({"url": line}) + "\n")
+    os.remove(args.output_tmp)
 
 def get_line_count(filename):
     with open(filename, "r") as lc:
@@ -278,8 +279,8 @@ def main():
         required=False)
 
     parser.add_argument("-t", "--threads",
-                    help="Amount of threads to run simultaneously",
-                    required=False, default="0")
+                        help="Amount of threads to run simultaneously",
+                        required=False, default="0")
 
     args = parser.parse_args()
 
@@ -295,26 +296,25 @@ def main():
 
     # if we should remove existing, save the output to a temporary file
     if args.ignore_existing == True:
-      args.output_tmp = args.output + '.tmp'
+        args.output_tmp = args.output + '.tmp'
     else:
-      args.output_tmp = args.output
+        args.output_tmp = args.output
 
     # wipe the output before, so we fresh alternated data
     open(args.output_tmp, 'w').close()
 
     insert_all_indexes(args, alteration_words)
-    insert_dash_subdomains(args, alteration_words)
     if args.add_number_suffix == True:
-      insert_number_suffix_subdomains(args, alteration_words)
+        insert_number_suffix_subdomains(args, alteration_words)
     join_words_subdomains(args, alteration_words)
 
     threadhandler = []
 
     # Removes already existing + dupes from output
     if args.ignore_existing == True:
-      remove_existing(args)
+        remove_existing(args)
     else:
-      remove_duplicates(args)
+        remove_duplicates(args)
 
     if args.resolve:
         global progress
@@ -322,7 +322,7 @@ def main():
         global lock
         global starttime
         global found
-        global resolverName       
+        global resolverName
         lock = Lock()
         found = {}
         progress = 0
@@ -333,9 +333,9 @@ def main():
             for i in fp:
                 if args.threads:
                     if len(threadhandler) > int(args.threads):
-                        #Wait until there's only 10 active threads
+                        # Wait until there's only 10 active threads
                         while len(threadhandler) > 10:
-                           threadhandler.pop().join()
+                            threadhandler.pop().join()
                 try:
                     t = threading.Thread(
                         target=get_cname, args=(
@@ -344,12 +344,22 @@ def main():
                     threadhandler.append(t)
                     t.start()
                 except Exception as error:
-                    print("error:"),(error)
-            #Wait for threads
+                    print("error:"), (error)
+            # Wait for threads
             while len(threadhandler) > 0:
-               threadhandler.pop().join()
-               
-        timetaken = str(datetime.timedelta(seconds=(int(time.time())-starttime)))
+                threadhandler.pop().join()
+
+        with open(args.save, "r") as output_file:
+            output_file = output_file.readlines()
+            result_as_json = []
+            for line in output_file:
+                line = json.loads(line)
+                result_as_json.append(line)
+
+        root_path = pathlib.Path(__file__).parent.parent
+        output_json_path = root_path.joinpath("result_as_json.json")
+        output_json_path.write_text(json.dumps(result_as_json))
+        timetaken = str(datetime.timedelta(seconds=(int(time.time()) - starttime)))
         print(
             colored("[*] Completed in {0}".format(timetaken),
                     "blue"))
