@@ -284,12 +284,9 @@ def main():
 
     args = parser.parse_args()
 
-    root_path = pathlib.Path(__file__).parent.parent
-    output_json_path = root_path.joinpath("result_as_json.json")
-
     if args.resolve:
         try:
-            resolved_out = open(output_json_path, "a")
+            resolved_out = open(args.save, "a")
         except:
             print("Please provide a file name to save results to "
                   "via the -s argument")
@@ -359,8 +356,8 @@ def main():
                 line = json.loads(line)
                 result_as_json.append(line)
 
-        # root_path = pathlib.Path(__file__).parent.parent
-        # output_json_path = root_path.joinpath("result_as_json.json")
+        root_path = pathlib.Path(__file__).parent.parent
+        output_json_path = root_path.joinpath("result_as_json.json")
         output_json_path.write_text(json.dumps(result_as_json))
 
         timetaken = str(datetime.timedelta(seconds=(int(time.time()) - starttime)))
